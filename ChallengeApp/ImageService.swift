@@ -13,12 +13,11 @@ struct ImageData: Decodable {
 }
 
 final class ImageService: ObservableObject {
-    private var imageFetchCancellable: AnyCancellable? = nil
-    let urlSession: URLSession
     @Published var imageData: [ImageData] = []
-
+    private var imageFetchCancellable: AnyCancellable? = nil
     var imageCache: [String: UIImage] = [:]
     var pageCount = 1
+    let urlSession: URLSession
 
     enum ImageServiceError: Error {
         case jsonDecode(DecodingError)
@@ -32,19 +31,22 @@ final class ImageService: ObservableObject {
     /// Fetches an array of items from the given URL
     func fetchItems<T: Decodable>(_ : T.Type, url: URL) -> AnyPublisher<[T], ImageServiceError> {
         urlSession.dataTaskPublisher(for: url).tryMap { (data, _) in
-            try JSONDecoder().decode([T].self, from: data)
-        }.mapError { err -> ImageServiceError in
+            return data
+        }
+        .decode(type: [T].self, decoder: JSONDecoder())
+        .mapError { err -> ImageServiceError in
             if let e = err as? DecodingError  {
                 return ImageServiceError.jsonDecode(e)
             } else {
                 return ImageServiceError.general
             }
-        }.eraseToAnyPublisher()
+        }
+        .eraseToAnyPublisher()
     }
 
     func updateImages() {
         os_log(.debug, "Updating Images from Page \(self.pageCount)")
-        guard let url = URL(string: "https://picsum.photos/v2/list?page=\(pageCount)&limit=25") else {
+        guard let url = URL(string: "https://picsum.photos/v2/list?page=\(pageCount)&limit=100") else {
             return
         }
 
@@ -60,7 +62,9 @@ final class ImageService: ObservableObject {
                 },
                 receiveValue: { [weak self] data in
                     os_log("Values Received")
-                    self?.imageData = data
+                    DispatchQueue.main.async {
+                        self?.imageData = data
+                    }
                     self?.pageCount += 1
                     self?.updateImageCache()
                 }
@@ -69,7 +73,7 @@ final class ImageService: ObservableObject {
 
     func updateImageCache() {
         os_log("Prepping Cache for page \(self.pageCount)")
-        guard let url = URL(string: "https://picsum.photos/v2/list?page=\(pageCount)&limit=25") else {
+        guard let url = URL(string: "https://picsum.photos/v2/list?page=\(pageCount)&limit=100") else {
             return
         }
         imageFetchCancellable = fetchItems(ImageData.self, url: url)
